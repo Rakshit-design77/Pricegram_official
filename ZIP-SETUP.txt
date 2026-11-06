@@ -1,0 +1,28 @@
+Pricegram updated source archive
+================================
+
+Contains the current project source, assets, configuration, documentation,
+regression tests, and local code changes. GitHub search commit: 884cb82.
+Additional local AI changes are included as they exist on this laptop.
+
+Run locally
+-----------
+1. Install Node.js 20.9 or newer.
+2. Open a terminal in the extracted pricegram folder.
+3. Run: npm ci
+4. Copy .env.example to .env.local and enter your own API keys.
+   Required for startup: Clerk publishable key, Clerk secret key, VALUESERP_API_KEY.
+   GEMINI_API_KEY enables the AI features. Redis settings are optional.
+5. Run: npm run dev
+6. Open http://localhost:3000
+
+Search regression checks: node scripts/search-regression.cjs
+Type check: npx tsc --noEmit --incremental false
+
+Excluded: node_modules, compiled builds/caches, Git history, deployment metadata,
+.env.local/private credentials, scratch scripts with hardcoded credentials,
+old ZIPs, logs, and generated browser diagnostics.
+The original files on your laptop were not modified while creating this archive.
+
+Hardcoded credential values replaced with placeholders in:
+- scratch/test_fallback_only.ts
