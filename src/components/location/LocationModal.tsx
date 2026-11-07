@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId } from "react";
+import { pincodeValidationError } from '@/lib/deliveryLocation';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MapPin, Navigation, Loader2, X } from "lucide-react";
@@ -27,11 +28,15 @@ export function LocationModal({
   const [isDetecting, setIsDetecting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [pincodeError, setPincodeError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const errorId = useId();
   const detectionRequest = useRef(0);
   useEffect(() => {
     detectionRequest.current++;
     setIsDetecting(false);
     setLocationError('');
+    setPincodeError('');
     setPincode('');
     return () => { detectionRequest.current++; };
   }, [isOpen]);
@@ -51,9 +56,12 @@ export function LocationModal({
         },
         (error) => {
           if (request !== detectionRequest.current) return;
-          console.error("Geolocation error:", error);
           setIsDetecting(false);
-          setLocationError("Could not access your location. Please enter a pincode.");
+          setLocationError(error.code === 1
+            ? 'Location permission was denied. Allow location access in your browser, or enter your pincode below.'
+            : error.code === 3
+              ? 'Finding your location took too long. Try again, or enter your pincode below.'
+              : 'Could not find your location. Try again, or enter your pincode below.');
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
       );
@@ -65,21 +73,28 @@ export function LocationModal({
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (/^[1-9]\d{5}$/.test(pincode)) {
-      detectionRequest.current++;
-      setIsDetecting(false);
-      setIsSaving(true);
-      onLocationChange(pincode);
-      setIsSaving(false);
-      onClose();
+    const error = pincodeValidationError(pincode);
+    setPincodeError(error);
+    if (error) {
+      inputRef.current?.focus();
+      return;
     }
+    detectionRequest.current++;
+    setIsDetecting(false);
+    setIsSaving(true);
+    onLocationChange(pincode.trim());
+    setIsSaving(false);
+    onClose();
   };
 
   if (!isOpen) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={open => { if (!open && !required) close(); }}>
-      <DialogContent className="bg-card w-[calc(100%-2rem)] max-w-md rounded-[2.5rem] sm:rounded-[2.5rem] p-0 gap-0 shadow-2xl overflow-hidden max-h-[95dvh] overflow-y-auto [&>button]:hidden">
+      <DialogContent
+        onEscapeKeyDown={event => { if (required) event.preventDefault(); }}
+        onInteractOutside={event => { if (required) event.preventDefault(); }}
+        className="bg-card w-[calc(100%-2rem)] max-w-md rounded-[2.5rem] sm:rounded-[2.5rem] p-0 gap-0 shadow-2xl overflow-hidden max-h-[95dvh] overflow-y-auto [&>button]:hidden">
         <div className="p-8 space-y-6">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
@@ -127,23 +142,31 @@ export function LocationModal({
 
           {/* Manual Input */}
           {locationError && <p role="alert" className="text-sm text-destructive">{locationError}</p>}
-          <form onSubmit={handleManualSubmit} className="space-y-4">
+          <form onSubmit={handleManualSubmit} noValidate className="space-y-4">
             <div className="relative">
               <Input 
                 placeholder="Enter pincode"
                 aria-label="Delivery pincode"
+                ref={inputRef}
+                aria-invalid={!!pincodeError}
+                aria-describedby={pincodeError ? errorId : undefined}
                 inputMode="numeric"
                 autoComplete="postal-code"
-                maxLength={6}
                 value={pincode}
-                onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => {
+                  setPincode(e.target.value);
+                  if (pincodeError) setPincodeError(pincodeValidationError(e.target.value));
+                  setLocationError('');
+                }}
+                onBlur={() => { if (pincode) setPincodeError(pincodeValidationError(pincode)); }}
                 className="h-16 rounded-[1.5rem] text-xl font-black text-center tracking-[0.5em] focus-visible:ring-primary border-muted-foreground/20 bg-muted/30"
               />
             </div>
+            {pincodeError && <p id={errorId} role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{pincodeError}</p>}
             <Button 
               type="submit" 
               variant="secondary" 
-              disabled={!/^[1-9]\d{5}$/.test(pincode) || isSaving}
+              disabled={isSaving}
               className="w-full h-16 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all hover:bg-secondary/80"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Set Manual Location"}

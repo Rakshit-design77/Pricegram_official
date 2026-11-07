@@ -10,7 +10,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "test:search": "node scripts/search-regression.cjs && node scripts/search-api-regression.cjs && node scripts/quick-commerce-regression.cjs",
+    "test:search": "node scripts/search-regression.cjs && node scripts/search-api-regression.cjs && node scripts/quick-commerce-regression.cjs && node scripts/location-regression.cjs",
     "test:quick-commerce:live": "node scripts/quick-commerce-live.cjs",
     "typecheck": "tsc --noEmit --incremental false"
   },

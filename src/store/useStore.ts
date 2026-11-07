@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Category, Platform } from '@/types'
 import { hasDeliveryLocation } from '@/lib/deliveryLocation'
+import { createPreferenceStorage } from '@/lib/preferenceStorage'
 
 interface AppState {
   searchTerm: string
@@ -40,7 +41,20 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'pricegram-storage',
+      storage: createPreferenceStorage<Partial<AppState>>(),
       version: 1,
+      merge: (saved, current) => {
+        const state = (saved || {}) as Partial<AppState>;
+        const coordinates = state.locationCoordinates;
+        return {
+          ...current,
+          location: typeof state.location === 'string' ? state.location : '',
+          locationCoordinates: coordinates && hasDeliveryLocation({ latitude: coordinates.latitude, longitude: coordinates.longitude }) ? coordinates : null,
+          searchTerm: typeof state.searchTerm === 'string' ? state.searchTerm : '',
+          wishlist: Array.isArray(state.wishlist) ? state.wishlist.filter((item): item is string => typeof item === 'string') : [],
+          recentSearches: Array.isArray(state.recentSearches) ? state.recentSearches.filter((item): item is string => typeof item === 'string') : [],
+        };
+      },
       migrate: (saved) => {
         const state = (saved || {}) as Partial<AppState>;
         // Earlier versions silently assigned this default, so ask those users to confirm it.

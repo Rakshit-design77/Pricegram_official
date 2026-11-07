@@ -1,5 +1,14 @@
 import type { DeliveryLocation } from '@/types';
 
+export function pincodeValidationError(value: string): string {
+  const pincode = value.trim();
+  if (!pincode) return 'Enter your delivery pincode to continue.';
+  if (!/^\d+$/.test(pincode)) return 'Use numbers only for your pincode.';
+  if (pincode.length !== 6) return 'Your pincode must contain exactly 6 digits.';
+  if (pincode.startsWith('0')) return 'An Indian pincode cannot start with 0.';
+  return '';
+}
+
 export function savedDeliveryLocation(label: string, coordinates: { latitude: number; longitude: number } | null): DeliveryLocation {
   if (coordinates && hasDeliveryLocation(coordinates)) return coordinates;
   const pincode = label.match(/\b[1-9]\d{5}\b/)?.[0];
