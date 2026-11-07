@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useStore } from "@/store/useStore";
 import { useCartStore } from "@/store/cartStore";
 import { LocationModal } from "@/components/location/LocationModal";
+import { useDeliveryLocation } from '@/hooks/useDeliveryLocation';
 import { 
   SignInButton, 
   SignUpButton, 
@@ -25,6 +26,7 @@ export function Navbar() {
   const [isSmartSearch, setIsSmartSearch] = useState(false);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const { location, setLocation, setDetectedLocation } = useStore();
+  const delivery = useDeliveryLocation();
   
   // Cart state
   const items = useCartStore(state => state.items);
@@ -193,7 +195,8 @@ export function Navbar() {
       </nav>
 
       <LocationModal 
-        isOpen={isLocationModalOpen}
+        isOpen={delivery.hydrated && (!delivery.ready || isLocationModalOpen)}
+        required={!delivery.ready}
         onClose={() => setIsLocationModalOpen(false)}
         currentLocation={location || 'Set location'}
         onLocationChange={setLocation}

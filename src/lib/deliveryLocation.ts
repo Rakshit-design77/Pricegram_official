@@ -1,5 +1,11 @@
 import type { DeliveryLocation } from '@/types';
 
+export function savedDeliveryLocation(label: string, coordinates: { latitude: number; longitude: number } | null): DeliveryLocation {
+  if (coordinates && hasDeliveryLocation(coordinates)) return coordinates;
+  const pincode = label.match(/\b[1-9]\d{5}\b/)?.[0];
+  return pincode ? { pincode } : {};
+}
+
 export function locationFromParams(params: URLSearchParams): DeliveryLocation {
   const pincode = params.get('pincode')?.trim();
   const lat = params.get('lat');

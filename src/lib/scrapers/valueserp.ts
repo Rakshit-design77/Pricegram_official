@@ -111,6 +111,7 @@ function detectCategory(title: string, query: string): Category {
 
   // 6. Grocery & Essentials
   if (
+    /\b(frooti|maaza|tropicana|mango drink|fruit juice|soft drink)\b/i.test(text) ||
     text.includes("grocery") ||
     text.includes("groceries") ||
     text.includes("essential") ||
@@ -608,9 +609,10 @@ export async function fetchValueSerpResults(query: string): Promise<SearchResult
     return { success: true, products: directResults };
   }
 
-  // 2. Fetch ScaleSERP results (aggregates quick commerce / JioMart / BigBasket)
+  // Grocery cards must come from direct store retrieval, not general web-search snippets.
+  // Keep the existing optional fallback for non-grocery searches.
   const apiKey = process.env.VALUESERP_API_KEY;
-  if (apiKey) {
+  if (apiKey && !isGroceryQuery) {
     try {
       const scaleSerpProducts = (await fetchScaleSerpBackup(sourceQuery, apiKey))
         .filter(product => matchesSearchIntent(product, query));

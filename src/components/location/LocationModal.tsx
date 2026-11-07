@@ -4,9 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MapPin, Navigation, Loader2, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 interface LocationModalProps {
   isOpen: boolean;
+  required?: boolean;
   onClose: () => void;
   currentLocation: string;
   onLocationChange: (location: string) => void;
@@ -15,6 +17,7 @@ interface LocationModalProps {
 
 export function LocationModal({ 
   isOpen, 
+  required = false,
   onClose, 
   currentLocation, 
   onLocationChange,
@@ -75,17 +78,17 @@ export function LocationModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-card w-full max-w-md rounded-[2.5rem] border shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+    <Dialog open={isOpen} onOpenChange={open => { if (!open && !required) close(); }}>
+      <DialogContent className="bg-card w-[calc(100%-2rem)] max-w-md rounded-[2.5rem] sm:rounded-[2.5rem] p-0 gap-0 shadow-2xl overflow-hidden max-h-[95dvh] overflow-y-auto [&>button]:hidden">
         <div className="p-8 space-y-6">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <h2 className="text-2xl font-black tracking-tight uppercase italic">Set <span className="text-primary">Location</span></h2>
-              <p className="text-sm text-muted-foreground font-medium">Get local prices & faster delivery.</p>
+              <DialogTitle className="text-2xl font-black tracking-tight uppercase italic">Set <span className="text-primary">Location</span></DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground font-medium">Choose your delivery location to start comparing products.</DialogDescription>
             </div>
-            <Button variant="ghost" size="icon" onClick={close} className="rounded-full hover:bg-muted">
+            {!required && <Button variant="ghost" size="icon" onClick={close} aria-label="Close location picker" className="rounded-full hover:bg-muted">
               <X className="h-5 w-5" />
-            </Button>
+            </Button>}
           </div>
 
           {/* Current Location Display */}
@@ -127,7 +130,10 @@ export function LocationModal({
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <div className="relative">
               <Input 
-                placeholder="201301" 
+                placeholder="Enter pincode"
+                aria-label="Delivery pincode"
+                inputMode="numeric"
+                autoComplete="postal-code"
                 maxLength={6}
                 value={pincode}
                 onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
@@ -148,7 +154,7 @@ export function LocationModal({
         <div className="bg-primary/5 p-4 text-center border-t border-primary/10">
           <p className="text-xs text-primary/80">Availability depends on your delivery location and each store.</p>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

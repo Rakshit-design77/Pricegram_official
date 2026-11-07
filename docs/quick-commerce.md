@@ -36,10 +36,13 @@ Chromium launch failure reports `browser_unavailable`. Either runtime also needs
 - "Use Current Location" now uses the actual browser coordinates instead of the old simulated Noida location.
 - Selecting a manual pincode clears any earlier GPS coordinates.
 - New visitors choose their location explicitly. The earlier implicit 201310 preference is cleared during storage migration so it can be confirmed. Manual selection or closing the picker invalidates pending GPS callbacks.
+- After saved preferences hydrate, the site automatically opens a required location dialog if no valid location is saved. Searches wait until that choice is made. Returning visitors keep their chosen location and can change it from the header.
 - A pincode may be too broad for a store's delivery catchment. The adapter requires a matching location suggestion and a committed location; otherwise it reports `location_unavailable`. GPS can provide a more precise location.
 - Changing the location or platform filters reissues the search.
 - Unavailable sources are identified in the results page, with direct store links. Failed sources do not discard results from working sources.
 - The UI does not display browser-service settings or secret details.
+- Product results retain the existing image-card layout. Source failures show an inline message and retry action, without outbound store-search fallback links. The product card's Buy button still opens the specific merchant offer.
+- Grocery queries, including Frooti and mango drinks, bypass general ScaleSERP snippets. Direct Amazon/Flipkart results and the direct Blinkit/Zepto adapters supply products. Lazy-loaded grocery image attributes are supported; absent images remain an explicit limitation rather than a fabricated product photo.
 
 ## API contract
 

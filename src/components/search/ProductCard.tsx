@@ -21,6 +21,7 @@ interface ProductCardProps {
 export function ProductCard({ product, viewMode }: ProductCardProps) {
   const isGrid = viewMode === "grid";
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [failedImage, setFailedImage] = useState('');
   const addItem = useCartStore(state => state.addItem);
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -72,12 +73,13 @@ export function ProductCard({ product, viewMode }: ProductCardProps) {
           <Badge className="absolute top-2 right-2 bg-emerald-500/90 hover:bg-emerald-600 border-none font-bold">
             {product.discount}% OFF
           </Badge>
-          <Image
+          {product.image && failedImage !== product.image ? <Image
             src={product.image}
             alt={product.title}
             fill
+            onError={() => setFailedImage(product.image)}
             className="object-contain p-4 transition-transform duration-500 group-hover:scale-110"
-          />
+          /> : <div className="px-4 text-center text-sm text-gray-500" role="img" aria-label={`${product.title}: image unavailable`}>Product image unavailable</div>}
         </div>
 
         {/* Content Container */}

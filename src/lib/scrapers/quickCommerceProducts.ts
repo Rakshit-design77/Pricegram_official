@@ -43,9 +43,14 @@ export function readGroceryCards(platform: 'Blinkit' | 'Zepto', html: string): G
       url = `https://blinkit.com/prn/${encodeURIComponent(title.toLowerCase().replace(/\s+/g, '-'))}/prid/${id}`;
     }
     const outOfStock = card.find('[data-is-out-of-stock="true"]').length > 0 || card.attr('data-is-out-of-stock') === 'true';
+    const image = card.find('img').toArray().flatMap(el => {
+      const img = $(el);
+      return [img.attr('data-src'), img.attr('data-lazy-src'), img.attr('src'),
+        (img.attr('srcset') || img.attr('data-srcset'))?.split(',')[0]?.trim().split(/\s+/)[0]];
+    }).find(value => value && /^https:\/\//.test(value) && !/\/eta-icons\/|transparent\.(gif|png)/i.test(value));
     cards.push({ title, unit, priceText: slotPrices.first().text() || price || currency,
       mrpText: slotPrices.eq(1).text() || card.find(mrpSelector).first().text(),
-      url, image: card.find('img').first().attr('src'),
+      url, image,
       inStock: outOfStock || /out of stock|sold out|notify me/i.test(text) ? false :
         card.find('button, [role="button"]').toArray().some(el => /^add$/i.test($(el).text().trim()) &&
           !$(el).is('[disabled], [aria-disabled="true"]')) ? true : undefined,

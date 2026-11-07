@@ -13,7 +13,7 @@ function loader(mocks = {}) {
     const mod = { exports: {} };
     cache.set(file, mod);
     const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX },
     }).outputText;
     const resolve = id => {
       if (Object.hasOwn(mocks, id)) return mocks[id].default ? { ...mocks[id], __esModule: true } : mocks[id];
@@ -21,7 +21,7 @@ function loader(mocks = {}) {
       if (id.startsWith('.')) return load(path.resolve(path.dirname(file), id) + '.ts');
       return require(id);
     };
-    new Function('require', 'exports', 'console', js)(resolve, mod.exports, { info() {}, warn() {} });
+    new Function('require', 'exports', 'console', js)(resolve, mod.exports, { info() {}, warn() {}, log() {}, error() {} });
     return mod.exports;
   }
   return relative => load(path.join(root, relative));
@@ -29,6 +29,7 @@ function loader(mocks = {}) {
 const load = loader();
 const { parseGroceryCards: parse, readGroceryCards: read } = load('src/lib/scrapers/quickCommerceProducts.ts');
 const { locationFromParams, appendDeliveryLocation, hasDeliveryLocation } = load('src/lib/deliveryLocation.ts');
+const { savedDeliveryLocation } = load('src/lib/deliveryLocation.ts');
 const card = overrides => ({ title: 'Amul Toned Milk', unit: '500 ml', priceText: '₹29.50',
   url: 'https://blinkit.com/prn/amul-milk/prid/19512', ...overrides });
 const fixtures = Object.fromEntries(['Blinkit', 'Zepto'].map(platform => [platform,
@@ -191,6 +192,94 @@ test('location changes remove previous coordinates and reject invalid direct ada
     { latitude: 91, longitude: 77 }, { latitude: 28 }, { latitude: 28, longitude: Infinity }]) {
     assert.equal(hasDeliveryLocation(location), false);
   }
+});
+
+test('first visit and invalid saved preferences require location; valid pincode and GPS restore correctly', () => {
+  assert.equal(hasDeliveryLocation(savedDeliveryLocation('', null)), false);
+  assert.equal(hasDeliveryLocation(savedDeliveryLocation('Current location', { latitude: NaN, longitude: 77 })), false);
+  assert.deepEqual(savedDeliveryLocation('Noida, 201301', null), { pincode: '201301' });
+  assert.deepEqual(savedDeliveryLocation('Current location', { latitude: 28.47, longitude: 77.51 }), { latitude: 28.47, longitude: 77.51 });
+});
+
+test('hydration gate waits for saved location and remains usable when persistence is unavailable', () => {
+  let hydrated = false;
+  let state = { location: '201301', locationCoordinates: null };
+  const store = selector => selector(state);
+  store.persist = { hasHydrated: () => hydrated };
+  const hook = loader({ react: { useSyncExternalStore: (_subscribe, snapshot) => snapshot() },
+    '@/store/useStore': { useStore: store } })('src/hooks/useDeliveryLocation.ts').useDeliveryLocation;
+  assert.deepEqual(hook(), { hydrated: false, ready: false });
+  hydrated = true;
+  assert.equal(hook().ready, true);
+  state = { location: '', locationCoordinates: null };
+  assert.equal(hook().ready, false);
+  delete store.persist;
+  state = { location: '201301', locationCoordinates: null };
+  assert.equal(hook().ready, true);
+});
+
+test('site header automatically opens a required picker only after hydration when no location is chosen', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const component = ({ children }) => React.createElement(React.Fragment, null, children);
+  const components = names => Object.fromEntries(names.split(' ').map(name => [name, component]));
+  let delivery = { hydrated: false, ready: false };
+  let picker;
+  const Navbar = loader({
+    'next/link': { default: component },
+    'next/navigation': { useRouter: () => ({ push() {} }) },
+    'lucide-react': components('Search MapPin Menu User LogIn Sparkles ShoppingCart'),
+    '@/components/ui/input': components('Input'), '@/components/ui/button': components('Button'),
+    '@/components/ui/switch': components('Switch'), '@/components/ui/sheet': components('Sheet SheetContent SheetTrigger'),
+    '@clerk/nextjs': components('SignInButton SignUpButton UserButton SignedIn SignedOut'),
+    '@/store/useStore': { useStore: () => ({ location: '', setLocation() {}, setDetectedLocation() {} }) },
+    '@/store/cartStore': { useCartStore: selector => selector({ items: [], setIsCartOpen() {} }) },
+    '@/hooks/useDeliveryLocation': { useDeliveryLocation: () => delivery },
+    '@/components/location/LocationModal': { LocationModal: props => { picker = props; return null; } },
+  })('src/components/layout/Navbar.tsx').Navbar;
+  renderToStaticMarkup(React.createElement(Navbar));
+  assert.equal(picker.isOpen, false);
+  delivery = { hydrated: true, ready: false };
+  renderToStaticMarkup(React.createElement(Navbar));
+  assert.equal(picker.isOpen, true);
+  assert.equal(picker.required, true);
+  delivery = { hydrated: true, ready: true };
+  renderToStaticMarkup(React.createElement(Navbar));
+  assert.equal(picker.isOpen, false);
+  assert.equal(picker.required, false);
+});
+
+test('grocery cards extract lazy product photos and ignore ETA icons instead of using store-search links', () => {
+  const html = '<div role="button" id="123"><h3>Frooti Mango Drink</h3><span>₹10</span>' +
+    '<img src="https://cdn.grofers.com/assets/eta-icons/15-mins.png"><img src="data:image/gif;base64,AA" data-src="https://cdn.grofers.com/products/frooti.jpg"></div>';
+  const [product] = parse('Blinkit', read('Blinkit', html));
+  assert.equal(product.image, 'https://cdn.grofers.com/products/frooti.jpg');
+  assert.equal(product.title, 'Frooti Mango Drink');
+  assert.match(product.url, /\/prid\/123$/);
+});
+
+test('Frooti and milk bypass general web-search fallback while retaining direct merchant products', async t => {
+  const originalFetch = global.fetch;
+  const key = process.env.VALUESERP_API_KEY;
+  process.env.VALUESERP_API_KEY = 'test-only';
+  t.after(() => { global.fetch = originalFetch; if (key === undefined) delete process.env.VALUESERP_API_KEY; else process.env.VALUESERP_API_KEY = key; });
+  const calls = [];
+  global.fetch = async url => {
+    calls.push(String(url));
+    const title = String(url).includes('milk') ? 'Amul Toned Milk' : 'Frooti Mango Drink';
+    return { status: 200, text: async () => String(url).includes('amazon.in') ?
+      '<div class="s-result-item" data-component-type="s-search-result"><h2><span>' + title + '</span></h2><span class="a-price-whole">10</span><img class="s-image" src="https://images.example.com/product.jpg"><a class="a-link-normal" href="/dp/PRODUCT123">Buy</a></div>' : '<html></html>' };
+  };
+  const marketplace = load('src/lib/scrapers/valueserp.ts');
+  for (const query of ['Frooti', 'frooti mango drink', 'milk']) {
+    const result = await marketplace.fetchValueSerpResults(query);
+    assert.equal(result.success, true);
+    assert.equal(result.products[0].image, 'https://images.example.com/product.jpg');
+    assert.equal(result.products[0].platform, 'Amazon');
+  }
+  assert.equal(calls.filter(url => url.includes('amazon.in')).length, 3);
+  assert.equal(calls.filter(url => url.includes('flipkart.com')).length, 3);
+  assert.equal(calls.some(url => url.includes('scaleserp.com')), false);
 });
 
 test('store requires a chosen location and manual selection supersedes GPS; legacy default is reconfirmed', () => {

@@ -7,6 +7,7 @@ import { ProductCard } from "@/components/search/ProductCard";
 import { Product, SearchSource } from "@/types";
 import { useStore } from "@/store/useStore";
 import { appendDeliveryLocation } from "@/lib/deliveryLocation";
+import { useDeliveryLocation } from '@/hooks/useDeliveryLocation';
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, List, SlidersHorizontal, ChevronDown, Loader2 } from "lucide-react";
 import { 
@@ -34,6 +35,7 @@ function SearchPageContent() {
   const [sources, setSources] = useState<SearchSource[]>([]);
   const location = useStore(state => state.location);
   const locationCoordinates = useStore(state => state.locationCoordinates);
+  const delivery = useDeliveryLocation();
   const previousSearch = useRef("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sortBy, setSortBy] = useState("Recommended");
@@ -59,7 +61,7 @@ function SearchPageContent() {
         setPriceRange([0, 200000]);
       }
       setSelectedProduct(null);
-      if (!query) {
+      if (!query || !delivery.ready) {
         setIsLoading(false);
         setIsAIOptimizing(false);
         return;
@@ -123,7 +125,7 @@ function SearchPageContent() {
 
     fetchResults();
     return () => controller.abort();
-  }, [query, isSmartEnabled, initialCategory, retryCount, location, locationCoordinates, platformsKey]);
+  }, [query, isSmartEnabled, initialCategory, retryCount, location, locationCoordinates, platformsKey, delivery.ready]);
 
   // Derived filtered results
   const filteredResults = useMemo(() => {
@@ -150,6 +152,10 @@ function SearchPageContent() {
       return 0; // Default: Google's ranking
     });
   }, [allResults, selectedPlatforms, selectedCategories, priceRange, sortBy]);
+
+  if (!delivery.ready) return <div className="container mx-auto px-4 py-16 text-center text-muted-foreground" role="status">
+    {delivery.hydrated ? 'Choose your delivery location to see products and prices.' : 'Loading your delivery location...'}
+  </div>;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -257,8 +263,6 @@ function SearchPageContent() {
                     source.status === 'location_unavailable' ? 'Your delivery area could not be confirmed. Try a more precise location.' :
                     source.status === 'store_unavailable' ? 'This store is temporarily closed or under maintenance for your area.' :
                     'Prices could not be checked right now. Try again shortly.'}
-                  {source.platform === 'Blinkit' && <> <a className="underline" href={`https://blinkit.com/s/?q=${encodeURIComponent(query)}`} target="_blank" rel="noopener noreferrer">Open Blinkit</a></>}
-                  {source.platform === 'Zepto' && <> <a className="underline" href={`https://www.zepto.com/search?query=${encodeURIComponent(query)}`} target="_blank" rel="noopener noreferrer">Open Zepto</a></>}
                 </p>
               ))}
               {sources.some(source => source.status !== 'success' && source.status !== 'empty') && (
