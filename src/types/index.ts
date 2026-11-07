@@ -8,7 +8,8 @@ export interface Product {
   platform: Platform;
   deliveryTime: string;
   deliveryFee: number;
-  stockStatus: "In stock" | "Few left" | "Out of stock";
+  stockStatus: "In stock" | "Few left" | "Out of stock" | "Unknown";
+  deliveryFeeKnown?: boolean;
   rating?: number;
   reviews?: number;
   url: string;
@@ -51,4 +52,35 @@ export type SearchResult =
       error: "NO_RESULTS" | "PARSER_ERROR" | "API_ERROR" | "RATE_LIMIT";
       products: [];
     };
+
+export interface DeliveryLocation {
+  pincode?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export type SourceState = 'success' | 'empty' | 'location_required' | 'location_unavailable' |
+  'blocked' | 'timeout' | 'browser_unavailable' | 'parse_error' | 'unavailable' | 'busy' | 'store_unavailable';
+
+export type SourceStage = 'browser' | 'storefront' | 'location' | 'search' | 'parse' | 'verify_location';
+
+export interface SearchSource {
+  platform: 'Blinkit' | 'Zepto' | 'Marketplace search';
+  status: SourceState;
+  receivedCount: number;
+  matchedCount: number;
+  durationMs: number;
+  stage?: SourceStage;
+  httpStatus?: number;
+}
+
+export interface ProviderSearchResult {
+  products: Product[];
+  source: SearchSource;
+}
+
+export interface SearchResponse {
+  products: Product[];
+  sources: SearchSource[];
+}
 

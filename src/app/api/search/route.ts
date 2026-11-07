@@ -1,46 +1,50 @@
 import { NextResponse } from 'next/server';
-import { rankProductsByRelevance } from '@/lib/searchRelevance';
+import { prepareSearchResults } from '@/lib/searchResults';
 export const dynamic = 'force-dynamic';
-import { fetchValueSerpResults } from '@/lib/scrapers/valueserp';
+import { searchProducts, searchablePlatforms } from '@/lib/productSearch';
 import { searchTokens } from '@/lib/searchIntent';
-import { validateEnvironment } from '@/lib/env';
+import { locationFromParams } from '@/lib/deliveryLocation';
 
-// Startup validation to fail fast if required env vars are missing
-validateEnvironment();
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+function jsonResponse(body: unknown, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-PriceGram-Search-Version': 'quick-commerce-v1',
+    },
+  });
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q')?.trim();
 
   if (!query) {
-    return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
+    return jsonResponse({ error: 'Query parameter "q" is required' }, 400);
+  }
+  if (query.length > 200) return jsonResponse({ error: 'Search queries must be 200 characters or fewer.' }, 400);
+  let location;
+  try { location = locationFromParams(searchParams); }
+  catch (error) { return jsonResponse({ error: (error as Error).message }, 400); }
+  const platforms = [...new Set((searchParams.get('platforms') || '').split(',').map(value => value.trim()).filter(Boolean))];
+  if (platforms.some(platform => !searchablePlatforms.includes(platform))) {
+    return jsonResponse({ error: 'Unknown platform filter.' }, 400);
   }
 
   try {
-    const results = await fetchValueSerpResults(query);
-
-    if (!results.success) {
-      const statusMap: Record<string, number> = {
-        NO_RESULTS: 404,
-        RATE_LIMIT: 429,
-        API_ERROR: 502,
-        PARSER_ERROR: 500,
-      };
-      const status = statusMap[results.error] || 500;
-      return NextResponse.json({ success: false, error: results.error, products: [] }, { status });
+    const results = await searchProducts(query, { location, platforms });
+    if (!results.products.length && results.sources.length &&
+      results.sources.every(source => source.status !== 'success' && source.status !== 'empty')) {
+      const missingLocation = results.sources.every(source => source.status === 'location_required');
+      return jsonResponse({ error: missingLocation ? 'LOCATION_REQUIRED' : 'SOURCES_UNAVAILABLE', products: [], sources: results.sources }, missingLocation ? 400 : 503);
     }
 
-    const rankedProducts = rankProductsByRelevance(results.products, query);
+    const rankedProducts = prepareSearchResults(results.products, query);
 
-    // Filter out completely irrelevant items (score < -50) if relevant items exist
-    const relevantProducts = rankedProducts.filter(p => (p._score ?? 0) >= -50);
-    const finalRanked = relevantProducts;
-
-    if (finalRanked.length === 0) {
-      return NextResponse.json([]);
-    }
-
-    const enriched = finalRanked.map(p => {
+    const enriched = rankedProducts.map(p => {
       // Compare only identical title specifications, not merely overlapping product names.
       const competitors = rankedProducts
         .filter(other => other.id !== p.id && searchTokens(p.title).sort().join(' ') === searchTokens(other.title).sort().join(' '))
@@ -54,10 +58,11 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json(enriched);
+    // Existing callers keep the array contract; the search UI requests provider diagnostics.
+    return jsonResponse(searchParams.get('details') === '1' ? { products: enriched, sources: results.sources } : enriched);
   } catch (error) {
     console.error('Search API Route Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return jsonResponse({ error: 'Internal Server Error' }, 500);
   }
 }
 

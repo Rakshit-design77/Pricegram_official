@@ -24,7 +24,7 @@ export function Navbar() {
   const [query, setQuery] = useState("");
   const [isSmartSearch, setIsSmartSearch] = useState(false);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
-  const { location, setLocation } = useStore();
+  const { location, setLocation, setDetectedLocation } = useStore();
   
   // Cart state
   const items = useCartStore(state => state.items);
@@ -82,7 +82,7 @@ export function Navbar() {
                         className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
                       >
                         <MapPin className="h-4 w-4 text-primary" />
-                        <span>{location}</span>
+                        <span>{location || 'Set location'}</span>
                       </button>
                       <SignedOut>
                         <SignInButton mode="modal">
@@ -152,7 +152,7 @@ export function Navbar() {
               className="hidden sm:flex items-center gap-1 text-xs font-bold text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-full border hover:bg-muted/50 transition-all"
             >
               <MapPin className="h-3 w-3 text-primary" />
-              <span>{location}</span>
+              <span>{location || 'Set location'}</span>
             </Button>
             
             {/* Smart Cart Toggle */}
@@ -195,8 +195,9 @@ export function Navbar() {
       <LocationModal 
         isOpen={isLocationModalOpen}
         onClose={() => setIsLocationModalOpen(false)}
-        currentLocation={location}
+        currentLocation={location || 'Set location'}
         onLocationChange={setLocation}
+        onCoordinatesChange={setDetectedLocation}
       />
     </>
   );

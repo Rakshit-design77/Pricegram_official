@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
+import { useState, useEffect, Suspense, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Filters } from "@/components/search/Filters";
 import { ProductCard } from "@/components/search/ProductCard";
-import { Product } from "@/types";
+import { Product, SearchSource } from "@/types";
+import { useStore } from "@/store/useStore";
+import { appendDeliveryLocation } from "@/lib/deliveryLocation";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, List, SlidersHorizontal, ChevronDown, Loader2 } from "lucide-react";
 import { 
@@ -27,6 +29,12 @@ function SearchPageContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAIOptimizing, setIsAIOptimizing] = useState(false);
   const [optimizedQueryDisplay, setOptimizedQueryDisplay] = useState("");
+  const [searchError, setSearchError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
+  const [sources, setSources] = useState<SearchSource[]>([]);
+  const location = useStore(state => state.location);
+  const locationCoordinates = useStore(state => state.locationCoordinates);
+  const previousSearch = useRef("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sortBy, setSortBy] = useState("Recommended");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -35,28 +43,46 @@ function SearchPageContent() {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(initialCategory ? [initialCategory] : []);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 200000]);
+  const platformsKey = [...selectedPlatforms].sort().join(',');
 
   useEffect(() => {
+    const controller = new AbortController();
     async function fetchResults() {
-      if (!query) return;
+      setAllResults([]);
+      setSearchError("");
+      setSources([]);
+      setOptimizedQueryDisplay("");
+      const searchKey = JSON.stringify([query, isSmartEnabled, initialCategory]);
+      if (previousSearch.current !== searchKey) {
+        previousSearch.current = searchKey;
+        setSelectedCategories(initialCategory ? [initialCategory] : []);
+        setPriceRange([0, 200000]);
+      }
+      setSelectedProduct(null);
+      if (!query) {
+        setIsLoading(false);
+        setIsAIOptimizing(false);
+        return;
+      }
       
       setIsLoading(true);
-      setIsAIOptimizing(true);
-      setOptimizedQueryDisplay("");
+      setIsAIOptimizing(isSmartEnabled);
       
       try {
         // 1. Optimize query using AI if enabled
         let finalQuery = query;
         if (isSmartEnabled) {
           try {
-            const aiResponse = await fetch(`/api/ai/optimize-query?q=${encodeURIComponent(query)}`);
+            const aiResponse = await fetch(`/api/ai/optimize-query?q=${encodeURIComponent(query)}`, { signal: controller.signal });
             if (aiResponse.ok) {
               const aiData = await aiResponse.json();
-              finalQuery = aiData.optimizedQuery;
+              if (controller.signal.aborted) return;
+              finalQuery = typeof aiData.optimizedQuery === 'string' && aiData.optimizedQuery.trim()
+                ? aiData.optimizedQuery.trim() : query;
               if (finalQuery !== query && finalQuery !== "") {
                  setOptimizedQueryDisplay(finalQuery);
               }
-              if (aiData.maxPrice && typeof aiData.maxPrice === 'number') {
+              if (Number.isFinite(aiData.maxPrice) && aiData.maxPrice > 0) {
                  setPriceRange([0, aiData.maxPrice]);
               }
               if (aiData.category && typeof aiData.category === 'string') {
@@ -64,29 +90,40 @@ function SearchPageContent() {
               }
             }
           } catch (e) {
+            if (controller.signal.aborted) return;
             console.error("AI Optimization failed, falling back to original query:", e);
           }
         }
+        if (controller.signal.aborted) return;
         setIsAIOptimizing(false);
 
         // 2. Fetch actual results
-        const response = await fetch(`/api/search?q=${encodeURIComponent(finalQuery)}`);
+        const params = new URLSearchParams({ q: finalQuery, details: '1' });
+        appendDeliveryLocation(params, location, locationCoordinates);
+        if (platformsKey) params.set('platforms', platformsKey);
+        const response = await fetch(`/api/search?${params}`, { signal: controller.signal });
         const data = await response.json();
-        if (Array.isArray(data)) {
-          setAllResults(data);
-        } else {
-          setAllResults([]);
-        }
+        if (controller.signal.aborted) return;
+        if (Array.isArray(data?.sources)) setSources(data.sources);
+        const products = Array.isArray(data) ? data : data?.products;
+        if (!response.ok || !Array.isArray(products)) throw new Error('Invalid search response');
+        setAllResults(products);
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.error("Failed to fetch search results:", error);
         setAllResults([]);
+        setSearchError("Search is temporarily unavailable. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+          setIsAIOptimizing(false);
+        }
       }
     }
 
     fetchResults();
-  }, [query]);
+    return () => controller.abort();
+  }, [query, isSmartEnabled, initialCategory, retryCount, location, locationCoordinates, platformsKey]);
 
   // Derived filtered results
   const filteredResults = useMemo(() => {
@@ -149,7 +186,7 @@ function SearchPageContent() {
                 )}
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
-                {isLoading ? "Fetching real-time prices..." : `Showing ${filteredResults.length} relevant results`}
+                {searchError ? "Search unavailable" : isLoading ? "Fetching real-time prices..." : `Showing ${filteredResults.length} relevant results`}
               </p>
             </div>
 
@@ -210,6 +247,33 @@ function SearchPageContent() {
             </div>
           </div>
 
+          {!isLoading && sources.some(source => source.status !== 'success') && (
+            <div className="rounded-xl border p-4 text-sm space-y-2" role="status">
+              {sources.filter(source => source.status !== 'success').map(source => (
+                <p key={source.platform}>
+                  <strong>{source.platform}: </strong>
+                  {source.status === 'empty' ? 'No matching products found.' :
+                    source.status === 'location_required' ? 'Set your delivery location to check availability.' :
+                    source.status === 'location_unavailable' ? 'Your delivery area could not be confirmed. Try a more precise location.' :
+                    source.status === 'store_unavailable' ? 'This store is temporarily closed or under maintenance for your area.' :
+                    'Prices could not be checked right now. Try again shortly.'}
+                  {source.platform === 'Blinkit' && <> <a className="underline" href={`https://blinkit.com/s/?q=${encodeURIComponent(query)}`} target="_blank" rel="noopener noreferrer">Open Blinkit</a></>}
+                  {source.platform === 'Zepto' && <> <a className="underline" href={`https://www.zepto.com/search?query=${encodeURIComponent(query)}`} target="_blank" rel="noopener noreferrer">Open Zepto</a></>}
+                </p>
+              ))}
+              {sources.some(source => source.status !== 'success' && source.status !== 'empty') && (
+                <Button size="sm" variant="outline" onClick={() => setRetryCount(count => count + 1)}>Retry unavailable stores</Button>
+              )}
+            </div>
+          )}
+
+          {searchError && (
+            <div role="alert" className="rounded-xl border border-destructive/30 p-4 space-y-3">
+              <p>{searchError}</p>
+              <Button variant="outline" onClick={() => setRetryCount(count => count + 1)}>Try again</Button>
+            </div>
+          )}
+
           {/* Results Grid/List */}
           {isLoading ? (
             <div className={
@@ -249,7 +313,7 @@ function SearchPageContent() {
           />
 
           {/* Empty State */}
-          {!isLoading && filteredResults.length === 0 && (
+          {!isLoading && !searchError && filteredResults.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center">
                   <LayoutGrid className="h-10 w-10 text-muted-foreground" />

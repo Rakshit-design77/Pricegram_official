@@ -23,9 +23,9 @@ The live homepage is available, but its marketing copy describes some capabiliti
 
 | Area | Current source behavior |
 | --- | --- |
-| Search sources | The active search path tries direct Amazon/Flipkart HTML parsing and a ScaleSERP fallback. Other scraper modules are also included. |
+| Search sources | Amazon/Flipkart and ScaleSERP fallback run alongside location-aware Blinkit/Zepto browser adapters. The grocery adapters require a working browser runtime; live retrieval has not yet been verified. |
 | API naming | `VALUESERP_API_KEY` is the variable used by the code, but its fallback request currently targets `api.scaleserp.com`. Confirm provider/key compatibility before enabling it. |
-| Location | Pincode is stored in browser state; the active search endpoint does not pass it to the upstream provider. Local stock and delivery coverage are not guaranteed. |
+| Location | Selected pincode or real GPS coordinates are forwarded to Blinkit/Zepto. An unconfirmed location is reported as a failure; marketplace sources retain their existing location behavior. |
 | Price history | The chart generates illustrative historical values; it is not a stored historical price feed. |
 | Premium | Checkout is simulated and premium status is stored in localStorage. There is no real payment or server-side subscription enforcement. |
 | Admin | The admin interface uses sample data and local component state. It has no production admin authorization or persistence. |
@@ -49,7 +49,7 @@ Versions are defined by `package.json` and `package-lock.json`.
 
 ## Local development
 
-Use Node.js 20.9 or newer and npm. Start from a Git clone so both collaborators share the same history:
+Use Node.js 22.17 or newer (Node.js 24 recommended) and npm. Start from a Git clone so both collaborators share the same history:
 
 ```bash
 git clone https://github.com/Rakshit-design77/Pricegram_official.git
@@ -79,26 +79,40 @@ Open [localhost:3000](http://localhost:3000).
 | --- | --- |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser configuration; required by the current app setup. |
 | `CLERK_SECRET_KEY` | Clerk server authentication; required by current environment validation. |
-| `VALUESERP_API_KEY` | Required by current startup validation; used for the ScaleSERP request described above. |
+| `VALUESERP_API_KEY` | Enables the ScaleSERP fallback described above. Direct product search can run without it; the existing AI-route validation still expects it. |
 | `GEMINI_API_KEY` | Enables the optional AI tools. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Configure together for shared caching/rate limits. Without Redis, the fallback is process-local. |
+| `QUICK_COMMERCE_BROWSER_WS_ENDPOINT` | Optional private hosted Chromium CDP endpoint. Vercel otherwise uses the included serverless Chromium runtime; no separate browser account is required for that path. |
+| `PUPPETEER_EXECUTABLE_PATH` | Optional local Chrome executable path; development otherwise uses the installed Chrome channel. |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Reserved placeholders for future database integration. |
 | Clerk sign-in/sign-up/redirect variables | Routes supplied in `.env.example`; match them to your Clerk configuration. |
 
-Keep private credentials in `.env.local` or Vercel environment settings. The repository includes placeholders only. Environment validation currently executes when search modules load, so missing required keys can block builds as well as requests.
+Keep private credentials in `.env.local` or Vercel environment settings. The repository includes placeholders only. The search endpoint no longer requires unrelated Clerk credentials at module load. Clerk is still needed for the account UI and a full production build; the AI routes retain their existing environment checks.
 
 ## Commands and checks
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the development server with Turbopack. |
+| `npm run dev` | Start the development server with Webpack (avoids the Puppeteer external-package junction error observed with Turbopack in this OneDrive workspace). |
 | `npm run build` | Create the production build; requires configured services/environment. |
 | `npm start` | Serve a completed production build. |
 | `node scripts/search-regression.cjs` | Run the 42 existing search relevance/intent assertions. |
+| `npm run test:search` | Run search, API, grocery-parser, location and provider-isolation regression checks. These use fixtures/mocked providers and do not prove live merchant coverage. |
+| `npm run typecheck` | Run TypeScript checking without writing incremental build metadata. |
 | `npx tsc --noEmit --incremental false` | Run TypeScript checking. |
 | `npm run lint` | Currently points to removed `next lint`; migrate to ESLint CLI and add a configuration before relying on it. |
 
-The source snapshot is preserved for collaboration. Known setup problems are documented here rather than silently changed during the initial upload.
+### First search reliability pass
+
+The search API filters candidates through the intent rules, removes duplicate offers, and assigns stable IDs that distinguish merchants and variants. Empty searches return `200 []`; reported provider failures retain error status codes. Responses include `X-PriceGram-Search-Version: quick-commerce-v1` and `Cache-Control: no-store` so the updated execution path can be checked after deployment.
+
+The search page cancels superseded requests, clears old results, refreshes query-derived filters, and shows an error/retry action for failed requests. Upstream fetches have timeouts. Some lower-level scraper failures still collapse into empty results; full per-provider diagnostics remain follow-up work.
+
+### Blinkit/Zepto integration
+
+Both adapters are now wired into search with selected location, isolated browser sessions, bounded execution, provider diagnostics, and partial-result handling. The search page requests detailed responses and displays unavailable sources. The current response version is `quick-commerce-v1`.
+
+The included Chromium 147 runtime is pinned to the installed Puppeteer Core 24.42 browser major for Linux/Vercel. Local development uses installed Chrome; a hosted endpoint is optional. Live storefront inspection confirmed milk listings and exposed markup/location-flow changes, now covered by regression tests. The app's Puppeteer runtime still cannot launch Chrome in the execution sandbox, so automated end-to-end retrieval remains unverified. See [the setup and validation guide](docs/quick-commerce.md) for observed results, fixes, runtime configuration and remaining checks. Local changes do not deploy themselves to Vercel. ScaleSERP search mode remains unchanged.
 
 ## Project structure
 

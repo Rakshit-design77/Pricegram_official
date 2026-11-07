@@ -1,10 +1,6 @@
 import { Product, Platform, Category, SearchResult } from '@/types';
 import { milkSearchQuery, matchesSearchIntent } from '@/lib/searchIntent';
 import * as cheerio from 'cheerio';
-import { validateEnvironment } from '@/lib/env';
-
-// Startup validation to fail fast if required env vars are missing
-validateEnvironment();
 
 
 function generateId(prefix: string, input: string): string {
@@ -144,12 +140,13 @@ function detectCategory(title: string, query: string): Category {
 
 async function scrapeAmazonDirect(query: string): Promise<Product[]> {
   try {
-    const url = `https://www.amazon.in/s?k=${query.replace(/\s+/g, '+')}`;
+    const url = `https://www.amazon.in/s?k=${encodeURIComponent(query)}`;
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
       },
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10000),
     });
 
     console.log(`[Amazon Scraper] Fetching "${url}", Status: ${response.status}`);
@@ -230,7 +227,8 @@ async function scrapeFlipkartDirect(query: string): Promise<Product[]> {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
       },
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10000),
     });
 
     if (response.status !== 200) return [];
@@ -405,7 +403,7 @@ export async function fetchScaleSerpBackup(query: string, apiKey: string): Promi
   let response;
   try {
     logger.info(`Fetching from ScaleSERP API for query "${query}"...`);
-    response = await fetch(apiUrl, { next: { revalidate: 3600 } });
+    response = await fetch(apiUrl, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(15000) });
     if (response.status !== 200) {
       logger.error(`ScaleSERP API returned non-200 status code: ${response.status}`);
       return [];

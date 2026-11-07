@@ -14,7 +14,7 @@ export function Hero() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
-  const { location, setLocation } = useStore();
+  const { location, setLocation, setDetectedLocation } = useStore();
   const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
@@ -106,7 +106,7 @@ export function Hero() {
                     <div className="flex flex-col items-start">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Location</span>
                       <div className="flex items-center gap-1">
-                        <span className="text-sm font-black whitespace-nowrap">{location}</span>
+                        <span className="text-sm font-black whitespace-nowrap">{location || 'Set location'}</span>
                         <ChevronDown size={14} className="text-muted-foreground" />
                       </div>
                     </div>
@@ -165,8 +165,9 @@ export function Hero() {
       <LocationModal 
         isOpen={isLocationModalOpen}
         onClose={() => setIsLocationModalOpen(false)}
-        currentLocation={location}
+        currentLocation={location || 'Set location'}
         onLocationChange={setLocation}
+        onCoordinatesChange={setDetectedLocation}
       />
     </>
   );
