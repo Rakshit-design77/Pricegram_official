@@ -33,6 +33,9 @@ function SearchPageContent() {
   const [searchError, setSearchError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
   const [sources, setSources] = useState<SearchSource[]>([]);
+  const unavailableStores = sources.filter(source =>
+    source.platform !== 'Marketplace search' && source.status !== 'success' && source.status !== 'empty',
+  );
   const location = useStore(state => state.location);
   const locationCoordinates = useStore(state => state.locationCoordinates);
   const delivery = useDeliveryLocation();
@@ -253,22 +256,10 @@ function SearchPageContent() {
             </div>
           </div>
 
-          {!isLoading && sources.some(source => source.status !== 'success') && (
-            <div className="rounded-xl border p-4 text-sm space-y-2" role="status">
-              {sources.filter(source => source.status !== 'success').map(source => (
-                <p key={source.platform}>
-                  <strong>{source.platform}: </strong>
-                  {source.status === 'empty' ? 'No matching products found.' :
-                    source.status === 'location_required' ? 'Set your delivery location to check availability.' :
-                    source.status === 'location_unavailable' ? 'Your delivery area could not be confirmed. Try a more precise location.' :
-                    source.status === 'store_unavailable' ? 'This store is temporarily closed or under maintenance for your area.' :
-                    'Prices could not be checked right now. Try again shortly.'}
-                </p>
-              ))}
-              {sources.some(source => source.status !== 'success' && source.status !== 'empty') && (
-                <Button size="sm" variant="outline" onClick={() => setRetryCount(count => count + 1)}>Retry unavailable stores</Button>
-              )}
-            </div>
+          {!isLoading && unavailableStores.length > 0 && (
+            <p className="text-sm text-muted-foreground" role="status">
+              Couldn’t verify prices from {unavailableStores.map(source => source.platform).join(' and ')} for your location.
+            </p>
           )}
 
           {searchError && (
@@ -322,7 +313,7 @@ function SearchPageContent() {
                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center">
                   <LayoutGrid className="h-10 w-10 text-muted-foreground" />
                </div>
-               <h2 className="text-xl font-bold">No matching results found</h2>
+               <h2 className="text-xl font-bold">{unavailableStores.length ? 'No verified products to show' : 'No matching results found'}</h2>
                <p className="text-muted-foreground max-w-xs">Try adjusting your filters or search for something else.</p>
                <Button onClick={() => {
                  setSelectedPlatforms([]);

@@ -3,6 +3,8 @@ import { matchesSearchIntent } from './searchIntent';
 import { fetchValueSerpResults } from './scrapers/valueserp';
 import { scrapeBlinkit } from './scrapers/blinkit';
 import { scrapeZepto } from './scrapers/zepto';
+import { fetchQuickCommerceProducts } from './scrapers/quickCommerceApi';
+import { hasDeliveryLocation } from './deliveryLocation';
 
 export const searchablePlatforms = ['Amazon', 'Flipkart', 'Blinkit', 'Zepto', 'Swiggy Instamart', 'BigBasket'];
 
@@ -27,8 +29,16 @@ export async function searchProducts(query: string, options: SearchOptions): Pro
       } };
     } });
   }
-  if (wanted('Blinkit')) jobs.push({ platform: 'Blinkit', run: () => scrapeBlinkit(query, options.location) });
-  if (wanted('Zepto')) jobs.push({ platform: 'Zepto', run: () => scrapeZepto(query, options.location) });
+  const apiKey = process.env.QUICK_COMMERCE_API_KEY?.trim();
+  const { latitude, longitude } = options.location;
+  const coordinates = latitude !== undefined && longitude !== undefined && hasDeliveryLocation({ latitude, longitude })
+    ? { latitude, longitude } : null;
+  for (const [platform, scrape] of [['Blinkit', scrapeBlinkit], ['Zepto', scrapeZepto]] as const) {
+    if (!wanted(platform)) continue;
+    jobs.push({ platform, run: () => apiKey && coordinates
+      ? fetchQuickCommerceProducts(platform, query, coordinates, apiKey)
+      : scrape(query, options.location) });
+  }
 
   // Each provider settles independently; one failed browser must not discard marketplace results.
   const results = await Promise.all(jobs.map(async job => {

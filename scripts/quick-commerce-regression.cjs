@@ -305,6 +305,70 @@ test('store requires a chosen location and manual selection supersedes GPS; lega
 function provider(platform, products = [], status = 'success') {
   return { products, source: { platform, status, receivedCount: products.length, matchedCount: 0, durationMs: 0 } };
 }
+
+test('configured grocery API returns real card fields for both stores and isolates a store failure', async t => {
+  const key = process.env.QUICK_COMMERCE_API_KEY;
+  const originalFetch = global.fetch;
+  process.env.QUICK_COMMERCE_API_KEY = 'test-only';
+  t.after(() => {
+    global.fetch = originalFetch;
+    if (key === undefined) delete process.env.QUICK_COMMERCE_API_KEY;
+    else process.env.QUICK_COMMERCE_API_KEY = key;
+  });
+  const location = { latitude: 28.47, longitude: 77.51 };
+  let zeptoStatus = 200;
+  let browserCalls = 0;
+  global.fetch = async (url, options) => {
+    assert.equal(url.origin, 'https://api.quickcommerceapi.com');
+    assert.equal(url.searchParams.get('q'), 'toned milk');
+    assert.equal(url.searchParams.get('lat'), '28.47');
+    assert.equal(url.searchParams.get('lon'), '77.51');
+    assert.equal(options.headers['X-API-Key'], 'test-only');
+    const platform = url.searchParams.get('platform');
+    if (platform === 'Zepto' && zeptoStatus !== 200) return new Response(null, { status: zeptoStatus });
+    const deeplink = platform === 'BlinkIt' ? 'https://blinkit.com/prn/amul-milk/prid/19512' :
+      'https://www.zepto.com/pn/amul-milk/pvid/sku-500';
+    return Response.json({ status: 'success', data: { platform, products: [{
+      name: 'Amul Toned Milk', quantity: '500 ml', offer_price: 29.5, mrp: 32,
+      deeplink, images: ['https://images.example.com/milk.jpg'], available: platform === 'BlinkIt',
+    }] } });
+  };
+  const search = searchWithMocks(async (platform, _query, receivedLocation) => {
+    browserCalls++;
+    assert.deepEqual(receivedLocation, { pincode: '201310' });
+    return provider(platform, [], 'empty');
+  });
+  const filters = { location, platforms: ['Blinkit', 'Zepto'] };
+  const both = await search('toned milk', filters);
+  assert.deepEqual(both.products.map(product => [product.platform, product.title, product.price, product.mrp, product.image, product.stockStatus]), [
+    ['Blinkit', 'Amul Toned Milk 500 ml', 29.5, 32, 'https://images.example.com/milk.jpg', 'In stock'],
+    ['Zepto', 'Amul Toned Milk 500 ml', 29.5, 32, 'https://images.example.com/milk.jpg', 'Out of stock'],
+  ]);
+  assert.equal(browserCalls, 0);
+  zeptoStatus = 429;
+  const partial = await search('toned milk', filters);
+  assert.deepEqual(partial.sources.map(source => source.status), ['success', 'busy']);
+  assert.deepEqual(partial.products.map(product => product.platform), ['Blinkit']);
+  await search('toned milk', { ...filters, location: { pincode: '201310' } });
+  assert.equal(browserCalls, 2);
+});
+
+test('grocery API distinguishes an empty result from unusable product records', async t => {
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  const { fetchQuickCommerceProducts } = load('src/lib/scrapers/quickCommerceApi.ts');
+  const location = { latitude: 28.47, longitude: 77.51 };
+  for (const [products, expected] of [
+    [[], 'empty'],
+    [[{ name: 'Amul Toned Milk', offer_price: 30, deeplink: 'https://example.com/prid/19512' }], 'parse_error'],
+  ]) {
+    global.fetch = async () => Response.json({ status: 'success', data: { platform: 'BlinkIt', products } });
+    const result = await fetchQuickCommerceProducts('Blinkit', 'milk', location, 'test-only');
+    assert.equal(result.source.status, expected);
+    assert.deepEqual(result.products, []);
+  }
+});
+
 function searchWithMocks(browser, marketplace = async () => ({ success: true, products: [] })) {
   return loader({ './quickCommerceBrowser': { scrapeQuickCommerce: browser },
     './scrapers/valueserp': { fetchValueSerpResults: marketplace } })('src/lib/productSearch.ts').searchProducts;

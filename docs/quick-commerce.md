@@ -20,6 +20,8 @@ Use Node.js 22.17 or newer and install the updated lockfile with `npm ci --legac
 
 The default Vercel path launches the included `@sparticuz/chromium` Linux runtime with `puppeteer-core`. No separate browser-service account or token is needed for this path. Browser extraction is shared within an instance, while each shopper uses an isolated context. Pinning the browser major avoids an arbitrary mismatch with Puppeteer's supported Chrome version. Validate the function bundle size and memory usage on deployment; the browser binary assets occupy about 68 MB before runtime extraction.
 
+For an optional [QuickCommerceAPI trial](https://quickcommerceapi.com/docs), set the server-only `QUICK_COMMERCE_API_KEY` in `.env.local` or the deployment's environment settings. With a key, searches using **Use Current Location** send the query and chosen coordinates to the provider for Blinkit and Zepto, and use the returned offers in the normal results grid. Pincode-only searches retain the storefront path because the provider requires coordinates. Try this in a local or preview deployment with a credit-limited key first. Each successful store request can consume a credit.
+
 A hosted browser can optionally replace that local function runtime. Configure its trusted CDP WebSocket endpoint in the Vercel environment:
 
 ```env
